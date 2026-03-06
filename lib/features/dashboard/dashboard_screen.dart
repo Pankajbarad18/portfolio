@@ -1,6 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:ghost_portfolio/features/dashboard/cyber_corners.dart';
 import 'package:ghost_portfolio/features/dashboard/cyber_grid_painter.dart';
+import 'package:ghost_portfolio/features/dashboard/neural_node.dart';
 import '../../core/tilt/tilt_controller.dart';
+
+class Bullet {
+  Offset position;
+  Offset velocity;
+
+  Bullet(this.position, this.velocity);
+}
+
+extension OffsetNormalize on Offset {
+  Offset normalize() {
+    final length = distance;
+    if (length == 0) return this;
+    return this / length;
+  }
+}
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -10,12 +28,14 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final TiltController _tiltController = TiltController();
 
   late final AnimationController _scanController;
   late final Animation<double> _scan;
 
+  final List<Bullet> bullets = [];
+  late final Ticker _ticker;
   @override
   void initState() {
     super.initState();
@@ -29,13 +49,34 @@ class _DashboardScreenState extends State<DashboardScreen>
       begin: -1,
       end: 1,
     ).animate(CurvedAnimation(parent: _scanController, curve: Curves.linear));
+
+    _ticker = createTicker((_) {
+      for (final bullet in bullets) {
+        bullet.position += bullet.velocity;
+      }
+      setState(() {});
+    })..start();
   }
 
   @override
   void dispose() {
     _tiltController.dispose();
     _scanController.dispose();
+    _ticker.dispose();
     super.dispose();
+  }
+
+  void _fireBullet(Offset target) {
+    final screenCenter = Offset(
+      MediaQuery.of(context).size.width / 2,
+      MediaQuery.of(context).size.height / 2,
+    );
+
+    final direction = (target - screenCenter).normalize();
+
+    bullets.add(Bullet(screenCenter, direction * 10));
+
+    setState(() {});
   }
 
   @override
@@ -43,62 +84,98 @@ class _DashboardScreenState extends State<DashboardScreen>
     final screenSize = MediaQuery.of(context).size;
 
     return Scaffold(
-      body: MouseRegion(
-        onHover: (event) {
-          _tiltController.updatePosition(event.position, screenSize);
+      body: GestureDetector(
+        onTapDown: (details) {
+          _fireBullet(details.localPosition);
         },
-        child: Stack(
-          children: [
-            ValueListenableBuilder<Offset>(
-              valueListenable: _tiltController.tilt,
-              builder: (context, tilt, child) {
-                final maxAngle = 0.15;
+        child: MouseRegion(
+          onHover: (event) {
+            _tiltController.updatePosition(event.position, screenSize);
+          },
+          child: Stack(
+            children: [
+              ValueListenableBuilder<Offset>(
+                valueListenable: _tiltController.tilt,
+                builder: (context, tilt, child) {
+                  final maxAngle = 0.15;
 
-                return Stack(
-                  children: [
-                    _BackgroundLayer(tilt: tilt),
-                    AnimatedBuilder(
-                      animation: _scan,
-                      builder: (context, child) {
-                        return Positioned.fill(
-                          child: IgnorePointer(
-                            child: FractionallySizedBox(
-                              heightFactor: 0.15,
-                              alignment: Alignment(0, _scan.value),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Colors.transparent,
-                                      const Color(0xFF00FFFF).withOpacity(0.15),
-                                      Colors.transparent,
-                                    ],
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
+                  return Stack(
+                    children: [
+                      _BackgroundLayer(tilt: tilt),
+                      const NeuralSphere(label: "PROJECTS"),
+                      const NeuralSphere(label: "SKILLS"),
+                      const NeuralSphere(label: "CONTACT"),
+                      const NeuralSphere(label: "EXPERIENCE"),
+                      const _SystemStatus(),
+
+                      const CyberCorners(),
+                      ...bullets.map((bullet) {
+                        return Positioned(
+                          left: bullet.position.dx,
+                          top: bullet.position.dy,
+                          child: Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00FFFF),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(
+                                    0xFF00FFFF,
+                                  ).withOpacity(0.8),
+                                  blurRadius: 10,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                      AnimatedBuilder(
+                        animation: _scan,
+                        builder: (context, child) {
+                          return Positioned.fill(
+                            child: IgnorePointer(
+                              child: FractionallySizedBox(
+                                heightFactor: 0.15,
+                                alignment: Alignment(0, _scan.value),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        Colors.transparent,
+                                        const Color(
+                                          0xFF00FFFF,
+                                        ).withOpacity(0.15),
+                                        Colors.transparent,
+                                      ],
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                    Center(
-                      child: Transform(
-                        alignment: Alignment.center,
-                        transform: Matrix4.identity()
-                          ..setEntry(3, 2, 0.0015)
-                          ..rotateX(-tilt.dy * maxAngle)
-                          ..rotateY(tilt.dx * maxAngle),
-                        child: child,
+                          );
+                        },
                       ),
-                    ),
-                  ],
-                );
-              },
-              child: const _DashboardLayout(),
-            ),
-          ],
+                      Center(
+                        child: Transform(
+                          alignment: Alignment.center,
+                          transform: Matrix4.identity()
+                            ..setEntry(3, 2, 0.0015)
+                            ..rotateX(-tilt.dy * maxAngle)
+                            ..rotateY(tilt.dx * maxAngle),
+                          child: child,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+                child: const _DashboardLayout(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -162,46 +239,32 @@ class _DashboardLayoutState extends State<_DashboardLayout>
             child: child,
           );
         },
-        child: const Text(
-          "GHOST_PROTOCOL SYSTEM CORE",
-          style: TextStyle(
-            color: Color(0xFFFF2D75),
-            fontSize: 26,
-            letterSpacing: 4,
-            fontWeight: FontWeight.w600,
+        child: SizedBox(
+          width: 500,
+          height: 400,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              /// CORE TITLE
+              const Text(
+                "GHOST_PROTOCOL SYSTEM CORE",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFFFF2D75),
+                  fontSize: 26,
+                  letterSpacing: 4,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              // NeuralSphere(label: "PROJECTS", onHit: () {}),
+              // NeuralSphere(label: "SKILLS", onHit: () {}),
+              // NeuralSphere(label: "CONTACT", onHit: () {}),
+              // NeuralSphere(label: "EXPERIENCE", onHit: () {}),
+            ],
           ),
         ),
       ),
     );
-    // return Container(
-    //   width: 1000,
-    //   height: 600,
-    //   decoration: BoxDecoration(
-    //     color: Colors.black.withOpacity(0.6),
-    //     border: Border.all(
-    //       color: const Color.fromARGB(255, 31, 36, 191),
-    //       width: 1.5,
-    //     ),
-    //     boxShadow: [
-    //       BoxShadow(
-    //         color: const Color.fromARGB(255, 51, 90, 153).withOpacity(0.5),
-    //         blurRadius: 20,
-    //         spreadRadius: 2,
-    //       ),
-    //     ],
-    //   ),
-    //   child: const Center(
-    //     child: Text(
-    //       "GHOST_PROTOCOL SYSTEM CORE",
-    //       style: TextStyle(
-    //         fontSize: 28,
-    //         letterSpacing: 2,
-    //         color: Colors.pinkAccent,
-    //       ),
-    //     ),
-    //   ),
-    
-    // );
   }
 }
 
@@ -299,6 +362,49 @@ class _BackgroundLayer extends StatelessWidget {
         /// 🧩 5️⃣ Cyber Grid
         CustomPaint(size: Size.infinite, painter: CyberGridPainter(tilt)),
       ],
+    );
+  }
+}
+
+class _SystemStatus extends StatelessWidget {
+  const _SystemStatus();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Positioned(
+      top: 40,
+      left: 40,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "STATUS: ONLINE",
+            style: TextStyle(
+              color: Color(0xFF00FFFF),
+              fontSize: 12,
+              letterSpacing: 2,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            "CORE TEMP: 72%",
+            style: TextStyle(
+              color: Color(0xFF00FFFF),
+              fontSize: 12,
+              letterSpacing: 2,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            "SIGNAL: STABLE",
+            style: TextStyle(
+              color: Color(0xFF00FFFF),
+              fontSize: 12,
+              letterSpacing: 2,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
